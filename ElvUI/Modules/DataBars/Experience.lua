@@ -23,7 +23,7 @@ local UnitXPMax = UnitXPMax
 local function getQuestXP(completedOnly, zoneOnly)
 	local lastQuestLogID = GetQuestLogSelection()
 	local zoneText = GetZoneText()
-	local totalExp = 0
+	local completedExp, incompleteExp = 0, 0
 	local locationName
 
 	for questIndex = 1, GetNumQuestLogEntries() do
@@ -32,27 +32,85 @@ local function getQuestXP(completedOnly, zoneOnly)
 
 		if isHeader then
 			locationName = title
-		elseif (not completedOnly or isComplete) and (not zoneOnly or locationName == zoneText) then
-			totalExp = totalExp + GetQuestLogRewardXP(questID)
+		elseif not zoneOnly or locationName == zoneText then
+			if isComplete == 1 then -- 1 = completed, -1 = failed
+				completedExp = completedExp + GetQuestLogRewardXP(questID)
+			elseif not completedOnly then
+				incompleteExp = incompleteExp + GetQuestLogRewardXP(questID)
+			end
 		end
 	end
 
 	SelectQuestLogEntry(lastQuestLogID)
 
-	return totalExp
+	return completedExp, incompleteExp
 end
 
 function mod:ExperienceBar_QuestXPUpdate(event)
 	if event == "ZONE_CHANGED_NEW_AREA" and not self.db.experience.questXP.questCurrentZoneOnly then return end
 
-	self.questTotalXP = getQuestXP(self.db.experience.questXP.questCompletedOnly, self.db.experience.questXP.questCurrentZoneOnly)
+	self.questCompletedXP, self.questIncompleteXP = getQuestXP(self.db.experience.questXP.questCompletedOnly, self.db.experience.questXP.questCurrentZoneOnly)
+	self.questTotalXP = self.questCompletedXP + self.questIncompleteXP
 
-	if self.questTotalXP > 0 then
-		self.expBar.questBar:SetMinMaxValues(0, self.expBar.maxExp)
-		self.expBar.questBar:SetValue(min(self.expBar.curExp + self.questTotalXP, self.expBar.maxExp))
-		self.expBar.questBar:Show()
+	self:ExperienceBar_QuestXPUpdateBars()
+end
+
+function mod:ExperienceBar_QuestXPUpdateBars()
+	local bar = self.expBar
+	local questBar, incompleteBar = bar.questBar, bar.questIncompleteBar
+	local curExp, maxExp = bar.curExp, bar.maxExp
+
+	if not curExp or self.questTotalXP <= 0 then
+		questBar:Hide()
+		incompleteBar:Hide()
+		return
+	end
+
+	if not self.db.experience.questXP.separateColors then
+		incompleteBar:Hide()
+
+		questBar:SetMinMaxValues(0, maxExp)
+		questBar:SetValue(min(curExp + self.questTotalXP, maxExp))
+		questBar:Show()
+		return
+	end
+
+	-- completed quests fill from the current XP, incomplete quests continue from where the completed ones end
+	local completedExp = min(curExp + self.questCompletedXP, maxExp)
+	local anchorBar = bar.statusBar
+
+	if self.questCompletedXP > 0 then
+		questBar:SetMinMaxValues(0, maxExp)
+		questBar:SetValue(completedExp)
+		questBar:Show()
+		anchorBar = questBar
 	else
-		self.expBar.questBar:Hide()
+		questBar:Hide()
+	end
+
+	local remainingExp = maxExp - completedExp
+	if self.questIncompleteXP > 0 and remainingExp > 0 then
+		incompleteBar:ClearAllPoints()
+
+		if completedExp > 0 then
+			local anchorTexture = anchorBar:GetStatusBarTexture()
+
+			if self.db.experience.orientation == "HORIZONTAL" then
+				incompleteBar:SetPoint("TOPLEFT", anchorTexture, "TOPRIGHT")
+				incompleteBar:SetPoint("BOTTOMRIGHT", bar.statusBar, "BOTTOMRIGHT")
+			else
+				incompleteBar:SetPoint("BOTTOMLEFT", anchorTexture, "TOPLEFT")
+				incompleteBar:SetPoint("TOPRIGHT", bar.statusBar, "TOPRIGHT")
+			end
+		else
+			incompleteBar:SetAllPoints(bar.statusBar)
+		end
+
+		incompleteBar:SetMinMaxValues(0, remainingExp)
+		incompleteBar:SetValue(min(self.questIncompleteXP, remainingExp))
+		incompleteBar:Show()
+	else
+		incompleteBar:Hide()
 	end
 end
 
@@ -125,6 +183,10 @@ function mod:ExperienceBar_Update(event)
 				bar.text:SetFormattedText("%s - %d%% (%s)", E:ShortValue(curExp), curExp / maxExp * 100, E:ShortValue(maxExp - curExp))
 			end
 		end
+
+		if self.questXPEnabled then
+			self:ExperienceBar_QuestXPUpdateBars()
+		end
 	end
 end
 
@@ -180,8 +242,19 @@ function mod:ExperienceBar_UpdateDimensions()
 	self.expBar.questBar:SetOrientation(self.db.experience.orientation)
 	self.expBar.questBar:SetRotatesTexture(self.db.experience.orientation ~= "HORIZONTAL")
 
-	local color = self.db.experience.questXP.color
+	self.expBar.questIncompleteBar:SetOrientation(self.db.experience.orientation)
+	self.expBar.questIncompleteBar:SetRotatesTexture(self.db.experience.orientation ~= "HORIZONTAL")
+
+	local questXP = self.db.experience.questXP
+	local color = questXP.separateColors and questXP.completedColor or questXP.color
 	self.expBar.questBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+
+	color = questXP.incompleteColor
+	self.expBar.questIncompleteBar:SetStatusBarColor(color.r, color.g, color.b, color.a)
+
+	if self.questXPEnabled then
+		self:ExperienceBar_QuestXPUpdateBars()
+	end
 
 	if self.expBar.bubbles then
 		self:UpdateBarBubbles(self.expBar, self.db.experience)
@@ -245,6 +318,7 @@ function mod:ExperienceBar_QuestXPToggle(event)
 		self.expBar.eventFrame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
 
 		self.expBar.questBar:Hide()
+		self.expBar.questIncompleteBar:Hide()
 	end
 end
 
@@ -267,6 +341,12 @@ function mod:ExperienceBar_Load()
 	self.expBar.questBar:SetStatusBarTexture(E.media.normTex)
 	self.expBar.questBar:Hide()
 	E:RegisterStatusBar(self.expBar.questBar)
+
+	self.expBar.questIncompleteBar = CreateFrame("StatusBar", "$parent_QuestIncomplete", self.expBar)
+	self.expBar.questIncompleteBar:SetFrameLevel(2)
+	self.expBar.questIncompleteBar:SetStatusBarTexture(E.media.normTex)
+	self.expBar.questIncompleteBar:Hide()
+	E:RegisterStatusBar(self.expBar.questIncompleteBar)
 
 	self.expBar.eventFrame = CreateFrame("Frame")
 	self.expBar.eventFrame:Hide()

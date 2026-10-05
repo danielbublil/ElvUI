@@ -145,8 +145,18 @@ E.Options.args.databars = {
 							end,
 							disabled = function() return not mod.db.experience.enable end
 						},
-						color = {
+						separateColors = {
 							order = 2,
+							type = "toggle",
+							name = L["Separate Completed Quests"],
+							desc = L["Use different colors for the XP of completed and not completed quests."],
+							set = function(info, value)
+								mod.db.experience.questXP.separateColors = value
+								mod:ExperienceBar_UpdateDimensions()
+							end
+						},
+						color = {
+							order = 3,
 							type = "color",
 							name = L["Quest XP Color"],
 							hasAlpha = true,
@@ -158,10 +168,49 @@ E.Options.args.databars = {
 								local t = mod.db.experience.questXP.color
 								t.r, t.g, t.b, t.a = r, g, b, a
 								mod:ExperienceBar_UpdateDimensions()
-							end
+							end,
+							hidden = function() return mod.db.experience.questXP.separateColors end
+						},
+						completedColor = {
+							order = 3,
+							type = "color",
+							name = L["Completed Quests Color"],
+							hasAlpha = true,
+							get = function(info)
+								local t = mod.db.experience.questXP.completedColor
+								return t.r, t.g, t.b, t.a, 0, 1, 0, 0.4
+							end,
+							set = function(info, r, g, b, a)
+								local t = mod.db.experience.questXP.completedColor
+								t.r, t.g, t.b, t.a = r, g, b, a
+								mod:ExperienceBar_UpdateDimensions()
+							end,
+							hidden = function() return not mod.db.experience.questXP.separateColors end
+						},
+						incompleteColor = {
+							order = 4,
+							type = "color",
+							name = L["Not Completed Quests Color"],
+							hasAlpha = true,
+							get = function(info)
+								local t = mod.db.experience.questXP.incompleteColor
+								return t.r, t.g, t.b, t.a, 1, 0.82, 0, 0.4
+							end,
+							set = function(info, r, g, b, a)
+								local t = mod.db.experience.questXP.incompleteColor
+								t.r, t.g, t.b, t.a = r, g, b, a
+								mod:ExperienceBar_UpdateDimensions()
+							end,
+							hidden = function() return not mod.db.experience.questXP.separateColors end,
+							disabled = function() return not mod.db.experience.enable or not mod.db.experience.questXP.enable or mod.db.experience.questXP.questCompletedOnly end
+						},
+						spacer = {
+							order = 5,
+							type = "description",
+							name = " "
 						},
 						questCurrentZoneOnly = {
-							order = 3,
+							order = 6,
 							type = "toggle",
 							name = L["Quests in Current Zone Only"],
 							set = function(info, value)
@@ -170,7 +219,7 @@ E.Options.args.databars = {
 							end
 						},
 						questCompletedOnly = {
-							order = 4,
+							order = 7,
 							type = "toggle",
 							name = L["Completed Quests Only"],
 							set = function(info, value)
@@ -179,7 +228,7 @@ E.Options.args.databars = {
 							end
 						},
 						tooltip = {
-							order = 5,
+							order = 8,
 							type = "toggle",
 							name = L["Add Quest XP to Tooltip"],
 							set = function(info, value) mod.db.experience.questXP.tooltip = value end

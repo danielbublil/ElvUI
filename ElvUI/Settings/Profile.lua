@@ -125,6 +125,9 @@ P.databars = {
 		showBubbles = false,
 		questXP = {
 			color = {r = 0, g = 1, b = 0, a = 0.4},
+			separateColors = false,
+			completedColor = {r = 0, g = 1, b = 0, a = 0.4},
+			incompleteColor = {r = 1, g = 0.82, b = 0, a = 0.4},
 			tooltip = true,
 			questCurrentZoneOnly = false,
 			questCompletedOnly = false
